@@ -5,6 +5,7 @@
 
 #define MESTRE 0
 #define STD_TAG 0
+#define DEPTH 6
 
 typedef struct contagem_divisores{
     int valor_divisivel;
@@ -74,25 +75,46 @@ int Calcula_Divisores_Dinamico(int num){
 }
 
 //Função que calcula os divisores.
-int Calcula_Divisores(int num){
+int Calcula_Divisores(int num, int process_rank){
     int count = 1;
-    int num_threads = omp_get_thread_num();
-    #pragma omp parallel for reduction(+: count) num_threads(num_threads)
+    int tid;
+    #pragma omp parallel for reduction(+: count) num_threads(6)
         for (int i = 1; i <= (num/2); i++) {
             if ((num % i) == 0) {
+                //printf("Thread number: %d rank: %d\n", omp_get_thread_num(), process_rank);
                 count = count + 1;
             }
         }
     return count;
 }
 
+/*
+void nested(int depth)
+{
+    if (depth == DEPTH)
+        return;
+
+    #pragma omp parallel num_threads(2)
+    {
+        report_num_threads(depth);
+        nested(depth+1);
+    }
+}
+*/
 
 int main(int argc, char *argv[]) {
+
+
+    //omp_set_nested(1);
+    //nested(1);
+
+    omp_set_nested(1);
+    omp_set_dynamic(0);
+
     double t0, t1; 
     int process_rank, size_of_cluster;
-    int provided, required=MPI_THREAD_FUNNELED;
-
-    MPI_Init_thread(&argc, &argv, required, &provided); 
+    
+    MPI_Init(&argc, &argv); 
     MPI_Comm_size(MPI_COMM_WORLD, &size_of_cluster); 
     MPI_Comm_rank(MPI_COMM_WORLD, &process_rank); 
     MPI_Status status;
@@ -102,15 +124,8 @@ int main(int argc, char *argv[]) {
     int *nums_global;
     int *nums_local;
 
-    
 
     if (process_rank == MESTRE){
-        printf("\nProvided thread support level: %d\n", provided);
-        printf("  %d - MPI_THREAD_SINGLE\n", MPI_THREAD_SINGLE);
-        printf("  %d - MPI_THREAD_FUNNELED\n", MPI_THREAD_FUNNELED);
-        printf("  %d - MPI_THREAD_SERIALIZED\n", MPI_THREAD_SERIALIZED);
-        printf("  %d - MPI_THREAD_MULTIPLE\n", MPI_THREAD_MULTIPLE);
-
         //Abertura do arquivo de entrada.
         FILE *f_in;
         if (!(f_in = fopen("entrada.txt", "r"))) {
@@ -146,9 +161,13 @@ int main(int argc, char *argv[]) {
 
     //Calculando os divisores de cada elemento dos vetores locais paralelamente.
     int divisores_local[num_elementos_local];
+
+    #pragma omp parallel for
     for (int i = 0; i < num_elementos_local; i++){
-        divisores_local[i] = Calcula_Divisores(nums_local[i]);
+        divisores_local[i] = Calcula_Divisores(nums_local[i], process_rank);
     }
+    
+
     
     //Recebendo os vetores locais de todos os processos.
     MPI_Gather(&divisores_local, num_elementos_local, MPI_INT, nums_global, num_elementos_local, MPI_INT, MESTRE, MPI_COMM_WORLD);    
